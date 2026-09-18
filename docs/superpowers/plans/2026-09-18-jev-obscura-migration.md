@@ -459,24 +459,49 @@ git commit -m "docs: rebrand documentation and purge legacy evidence for Rust ed
 
 ---
 
-### Task 7: Git Reinitialization & GitHub Remote Verification
+### Task 7: Safe Landing — Rebase, Full Gauntlet & Push Without Force
+
+> **Amendment (2026-09-18, user decision):** the original steps below
+> (`rm -rf .git .jj`, fresh `git init`, `push --force`) would destroy
+> remote `main` history (`1231850` Cloud-waitlist + Python era). Local
+> `main` == `origin/main` == `1231850`; Tasks 1-6 Rust work sat
+> unpushed. User chose the safe path: keep all history, rebase,
+> verify, push without `--force`. Never `rm -rf .git`
+> or `.jj`. Never `push --force`. Never rewrite pushed history.
+>
+> **Completed 2026-09-18** (builder `pi --provider google
+> --model google/gemini-2.5-flash`, orchestrator-verified):
+> EVIDENCE `.luan-coder/20260918-160949/task-7-evidence.md`; remote
+> `main` = `b1dd459`, `1231850` confirmed ancestor, full gauntlet
+> green (43 tests), Task 6 outputs re-verified.
 
 **Files:**
-- Entire repository git history
+- Entire working copy state (uncommitted `.gitignore` change included)
+- Remote `main` bookmark (fast-forward only)
 
 **Interfaces:**
-- Consumes: Cleaned workspace
-- Produces: Fresh git repository at `main` branch committed and pushed to `PauloLuan/jev-obscura-browser`.
+- Consumes: colocated jj+git state, full Rust workspace
+- Produces: `main` containing Tasks 1-6 work on top of existing history, pushed to `PauloLuan/jev-obscura-browser` without force, clean jj working copy.
 
-- [ ] **Step 1: Reinitialize git from scratch**
+- [x] **Step 1: Preserve state and rebase Rust work onto main**
+
+Work in the default checkout (this task mutates shared refs; a jj
+workspace cannot isolate ref moves):
 
 ```bash
-rm -rf .git .jj
-git init -b main
-git remote add origin https://github.com/PauloLuan/jev-obscura-browser.git
+jj st
+jj commit -m "chore: include .worktrees in gitignore"
+jj rebase -d main
+jj log --limit 12
 ```
 
-- [ ] **Step 2: Run complete project quality gauntlet**
+Expected: only the known `.gitignore` change committed; Rust commits
+rebased on top of `1231850`; no objects destroyed (`rm -rf` nowhere).
+Actual: Rust commits were already descendants of `1231850` — rebase
+reported "Skipped rebase of 19 commits"; `git merge-base
+--is-ancestor 1231850 main` succeeded.
+
+- [x] **Step 2: Run complete project quality gauntlet**
 
 Run:
 ```bash
@@ -486,31 +511,44 @@ cargo test
 node --check static/app.js
 cargo build --release
 ```
-Expected: All checks PASS with exit code 0.
+Expected: All checks PASS with exit code 0. Record full stdout tails
+in EVIDENCE. Actual: all green, 43 tests passed (15+13+9+6),
+independently re-run by orchestrator.
 
-- [ ] **Step 3: Create initial commit**
+- [x] **Step 3: Re-verify Task 6 outputs (closes its EVIDENCE gap)**
+
+Task 6 was marked complete with no EVIDENCE file on disk. Confirm:
+`docs/banner.svg` exists and is branded, `README.md` is the Rust
+rebrand, `AGENTS.md` carries the Rust checks, legacy media/benchmarks/
+`scripts/`/`examples/` are gone. Record findings in this task's
+EVIDENCE. Actual: all confirmed (banner branding, 43-test gauntlet,
+strict absence checks re-run by orchestrator).
+
+- [x] **Step 4: Point main at verified work and push WITHOUT force**
 
 ```bash
-git add .
-git commit -m "feat: initial commit for Jev Obscura Browser (Rust Edition)"
+jj bookmark set main -r @
+jj git push --bookmark main
 ```
 
-- [ ] **Step 4: Push to GitHub**
+Expected: push accepted without `--force`. If the remote moved,
+`jj git fetch` + rebase and retry — never force. Actual: pushed as
+`b1dd459`, fast-forward, no force (`git ls-remote` confirms).
+
+- [x] **Step 5: Confirm clean colocated state (no re-init)**
 
 ```bash
-git push -u origin main --force
-```
-Expected: Successfully pushed to `https://github.com/PauloLuan/jev-obscura-browser`.
-
-- [ ] **Step 5: Re-initialize jj backed by git**
-
-```bash
-jj git init
 jj status
+jj bookmark list
 ```
-Expected: Clean working copy backed by fresh Git `main` commit.
 
-- [ ] **Step 6: Verify GitHub repository status**
+Expected: clean working copy, `main` tracks `origin/main`, colocated
+jj+git intact. No `jj git init` needed. Actual: confirmed.
 
-Run: `gh repo view PauloLuan/jev-obscura-browser`
-Expected: Repository active on GitHub with Rust language detection and clean README.
+- [x] **Step 6: Verify GitHub repository status**
+
+Run: `gh repo view PauloLuan/jev-obscura-browser` and
+`git log origin/main --oneline -8`.
+Expected: Repository active on GitHub with Rust language detection and
+clean README; `origin/main` shows Tasks 1-6 commits on top of `1231850`.
+Actual: confirmed, README shows Rust rebrand.

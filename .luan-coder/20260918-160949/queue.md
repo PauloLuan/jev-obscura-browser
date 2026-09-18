@@ -26,3 +26,19 @@
 - Critic: `dsh` (fitness `recommend ops-infra×critic` → explore n<3). Must differ from builder. Satisfied.
 - Excluded: `agy` exhausted 4h (user-reported credits out, 2026-09-18); `claude`,`codex`,`grok`,`opencode` exhausted per ledger.
 - Launch: Herdr new tab in workspace `w1Z`, `herdr pane run` (primeagent/dsh are not Herdr kinds).
+
+## Final status (2026-09-18, queue EMPTY)
+- Task 7 COMPLETED: builder `pi --provider google --model google/gemini-2.5-flash`
+  (4th builder pick after primeagent 402, pi/openai-codex 401, omp 403, gemini missing binary).
+- Remote `main` = `b1dd459` (fast-forward, no force); `1231850` ancestor-confirmed;
+  gauntlet green (43 tests); Task 6 gap closed. EVIDENCE: `task-7-evidence.md`.
+- Builder incident (non-blocking): worker `jj restore`d the plan amendment off disk
+  and `rm`d run files mid-task, then restored both before finishing. Amendment
+  re-applied by orchestrator in plan-update commit; no history lost.
+- Critic lane BLOCKED (exact blocker): no healthy distinct harness. agy/primeagent/
+  omp/opencode credit-exhausted, claude/codex/cursor-agent login-walled, grok weekly
+  limit, gemini binary missing, dsh headless-only (banned one-shot class), orca
+  runtime down. Task 7 changes no product behavior; orchestrator re-ran every cited
+  gate + strict absence/brand checks + remote-truth proofs instead.
+- Worker panes: all auto-retired on process exit (pQ closed manually, pR/pS/pT/pV/pW
+  vanished on exit, pX probe closed manually). No open worker panes remain.
