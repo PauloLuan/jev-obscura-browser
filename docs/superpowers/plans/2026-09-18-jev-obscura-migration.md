@@ -48,7 +48,7 @@
 - Consumes: Filesystem
 - Produces: Compilable Rust crate root with dependencies configured and static assets placed.
 
-- [ ] **Step 1: Write `Cargo.toml`**
+- [x] **Step 1: Write `Cargo.toml`**
 
 Create `Cargo.toml`:
 ```toml
@@ -70,7 +70,7 @@ path = "src/main.rs"
 
 [[bin]]
 name = "jev"
-path = "src/main.rs"
+path = "src/bin/jev.rs"
 
 [dependencies]
 tokio = { version = "1.43", features = ["full"] }
@@ -90,7 +90,7 @@ thiserror = "2.0"
 sha2 = "0.10"
 ```
 
-- [ ] **Step 2: Relocate static assets and snapshot script**
+- [x] **Step 2: Relocate static assets and snapshot script**
 
 ```bash
 mkdir -p src static
@@ -98,13 +98,13 @@ mv jev_ultrafast/static/* static/
 mv jev_ultrafast/snapshot.js src/snapshot.js
 ```
 
-- [ ] **Step 3: Remove legacy Python package and lockfiles**
+- [x] **Step 3: Remove legacy Python package and lockfiles**
 
 ```bash
 rm -rf jev_ultrafast pyproject.toml uv.lock .venv tests/test_agent.py
 ```
 
-- [ ] **Step 4: Create placeholder `src/lib.rs` and `src/main.rs`**
+- [x] **Step 4: Create placeholder `src/lib.rs` and `src/main.rs`**
 
 ```rust
 // src/lib.rs
@@ -118,12 +118,12 @@ fn main() {
 }
 ```
 
-- [ ] **Step 5: Verify initial compilation**
+- [x] **Step 5: Verify initial compilation**
 
 Run: `cargo check`
 Expected: Download crates and compile cleanly with exit code 0.
 
-- [ ] **Step 6: Commit changes**
+- [x] **Step 6: Commit changes**
 
 ```bash
 git add Cargo.toml Cargo.lock src/ static/ .env.example
