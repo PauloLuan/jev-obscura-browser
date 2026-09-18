@@ -55,6 +55,7 @@ fn sample_page() -> PageState {
             },
         ],
         screenshot: None,
+        ..Default::default()
     }
 }
 

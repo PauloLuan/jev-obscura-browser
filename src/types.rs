@@ -95,6 +95,14 @@ pub struct PageState {
     pub actions: Vec<Action>,
     #[serde(deserialize_with = "deserialize_scroll")]
     pub scroll: (i64, i64),
+    #[serde(default)]
+    pub fingerprint: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub screenshot: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub marker: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_key: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guards: Option<serde_json::Value>,
 }
