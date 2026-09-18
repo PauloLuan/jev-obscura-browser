@@ -1,142 +1,227 @@
-<img src="docs/banner.svg" alt="Jev Ultrafast · Browser Use × TypeSafe" width="100%" />
+<img src="docs/banner.svg" alt="Jev Obscura Browser · Obscura × TypeSafe" width="100%" />
 
-# Jev Ultrafast ⚡
+# Jev Obscura Browser ⚡ (Rust)
 
-> [!IMPORTANT]
-> **The Browser Use Cloud waitlist is open.** Get early access to ultrafast browser agents in the cloud.
-> **[Join the waitlist →](https://browser-use.com/ultrafast?utm_source=github&utm_medium=readme&utm_campaign=jev-ultrafast)**
+[![Language](https://img.shields.io/badge/Rust-2021_Edition-orange.svg?style=flat-square&logo=rust)](https://www.rust-lang.org)
+[![Obscura Browser](https://img.shields.io/badge/Obscura-CDP_WebSocket-06b6d4.svg?style=flat-square)](https://obscura.sh/)
+[![TypeSafe Jev](https://img.shields.io/badge/TypeSafe-Jev_System--One-10b981.svg?style=flat-square)](https://docs.typesafe.ai)
+[![Server](https://img.shields.io/badge/Inspector-Axum_8766-purple.svg?style=flat-square)](http://127.0.0.1:8766)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 
-**A browser agent with a dynamic, indexed action space.**
-
-Give it one goal. [TypeSafe's Jev](https://docs.typesafe.ai/introduction) picks an operation and an element. A small LLM writes text only when the operation is `TYPE_TEXT`.
-
-**Zürich → London on Google Flights in 7.1 seconds.** One natural-language goal, actual text generation, and loading waits included.
-
-<a href="docs/demo.mp4"><img src="docs/demo.gif" alt="A real Google Flights search at 1× speed, with generated city names and dynamic operation/target decisions" width="100%" /></a>
-
-[Watch the MP4](docs/demo.mp4) · [Measurements](docs/performance.md) · [Read the loop](jev_ultrafast/agent.py)
-
-## The action space
-
-Every observation produces a new element table:
-
-```text
-[1] button    Change ticket type · Round trip
-[2] combobox  Where from?        · San Francisco
-[3] combobox  Where to?          · empty
-[4] textbox   Departure          · empty
-...
-```
-
-The operations are `CLICK`, `TYPE_TEXT`, `SELECT`, `SCROLL_UP`, `SCROLL_DOWN`, `WAIT`, `DONE`, and `BLOCKED`. Only supported operations and targets are offered.
-
-```text
-                      one TypeSafe request
-                     ┌───────────────────────────┐
-page → element table → operation                 │
-                     │ click_target              │
-                     │ type_text_target          │
-                     │ select_target, if present │
-                     └─────────────┬─────────────┘
-                         use the matching target
-                                   │
-                    CLICK [7] ─────┤──→ browser
-                TYPE_TEXT [3] ─────┘
-                          ↓
-                   small LLM → text → browser
-```
-
-Target questions are speculative. If the operation is `CLICK`, only `click_target` can execute. Two decisions, **one network round trip**. Each target head contains only compatible elements. Native dropdown choices carry an observed element/option index.
-
-There are no site-specific action scripts or prepared field strings in the policy. The Flights example supplies a goal and independently verifies the outcome. The screenshot renderer adds labels afterward; it does not drive the browser.
-
-## Try it
-
-```bash
-git clone https://github.com/browser-use/jev-ultrafast.git
-cd jev-ultrafast
-uv sync
-cp .env.example .env
-# Add TYPESAFE_API_KEY and TEXT_MODEL_API_KEY.
-uv run jev
-```
-
-Open **http://127.0.0.1:8766** and click **Start demo → Run automatically**. The inspector shows numbered elements, operation probabilities, target probabilities, and executed actions. **Choose next** pauses before execution.
-
-Chrome connects through [Browser Harness](https://github.com/browser-use/browser-harness), installed by `uv sync`. Run `uv run browser-harness --doctor` if it needs connecting. Allow remote debugging in Chrome when prompted.
-
-`TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
-
-## Use the library
-
-```python
-from jev_ultrafast import Agent
-
-with Agent(
-    "https://www.google.com/travel/flights?hl=en",
-    "Find one-way flights from Zurich to London on September 20, 2026, "
-    "for one adult in economy. Stop when matching flight options are visible.",
-) as agent:
-    for state in agent.run():
-        print(state["elapsed_ms"], state["status"])
-```
-
-Run with `uv run --env-file .env python your_script.py`. The same policy can run a different task:
-
-```bash
-uv run --env-file .env python examples/run.py \
-  --url https://en.wikipedia.org/wiki/Main_Page \
-  --goal 'Find and open the Wikipedia article about Gödel’s incompleteness theorems.'
-```
-
-`uv run --env-file .env python examples/flights.py --keep-open` performs the flight search, checks the actual route/date/results, and saves its trace. It does not select or book a flight.
-
-## Why it moves
-
-- **One request per decision cycle.** Operation and target heads share the same observed state.
-- **No screenshots in the default agent loop.** Jev consumes structured state. The inspector opts into screenshots; the video uses a separate continuous screencast.
-- **One browser call per snapshot.** Read visible controls, their names, values, and text atomically. Keep references to the actual DOM nodes.
-- **Validate the selected target.** Clicks check the document, form values, target, and nearby context. Animation alone does not force another prediction. Resolve current geometry and reject covered controls before input.
-- **Wait for useful state.** After typing into a combobox, wait for visible suggestions, capped at 200 ms. Other interactions get at most two animation frames or 50 ms. These reads happen after execution is logged.
-- **Keep hidden tabs rendering.** Focus emulation prevents background animation throttling without switching Chrome's visible tab.
-- **Send visible text.** Offscreen article bodies and footers do not fill the model context.
-- **Reuse an interrupted text request.** A generated value survives a stale-page retry only if the entire text-helper input is unchanged.
-
-Every executed target is resolved from an observed node. The executor rechecks page freshness and click occlusion. Model output never becomes selectors, coordinates, shell commands, or executable JavaScript. Text-helper output must parse as a small JSON object before typing.
-
-## Small enough to read
-
-| File | Job |
-| --- | --- |
-| [agent.py](jev_ultrafast/agent.py) | The complete loop and text-helper handoff |
-| [snapshot.js](jev_ultrafast/snapshot.js) | Atomic DOM snapshot, indexed controls, freshness guards |
-| [browser.py](jev_ultrafast/browser.py) | Browser connection, current geometry, execution |
-| [model.py](jev_ultrafast/model.py) | Dynamic operation/target heads and text generation |
-| [questions.py](jev_ultrafast/questions.py) | Model instructions |
-| [demo.py](jev_ultrafast/demo.py) | Local inspector |
-
-## Evidence and limits
-
-The current video is a **7,073 ms** Google Flights run. Timing starts after initial page observation and includes model calls, generated text, browser work, stale decisions, and loading waits. A fresh independent check verifies the one-way setting, Zürich, London, September 20, 2026, and visible flight options. The video plays at 1×, with no opening hold and a 0.5-second final hold.
-
-In six alternating runs with identical models and settings, both versions passed **3/3**. Median task time went from **9.450 s → 7.092 s**, a **25% reduction**; median browser protocol calls went from **1,092 → 101**. This is three repeats of one task on one browser profile, not a general reliability benchmark.
-
-The same policy opened the requested Wikipedia article in **2.798 s** and passed a local hotel search/filter task in **1.896 s**. Runs, failures, source hashes, and measurement boundaries are in [performance.md](docs/performance.md).
-
-A `DONE` choice still requires independent outcome verification. The DOM reader handles common HTML and ARIA controls, not the full accessible-name specification. Shadow roots, frames, canvas, uploads, pop-up tabs, nested scrolling, and arbitrary keyboard widgets remain outside this MVP. Owned tabs share the existing Chrome profile.
-
-## Development
-
-```bash
-uv run ruff check .
-uv run pytest
-node --check jev_ultrafast/static/app.js
-node --check jev_ultrafast/snapshot.js
-uv build
-```
-
-Tests are offline. `uv run python scripts/check_guards.py` checks real controls in a local browser without model calls. Live examples and recording scripts make paid API calls. `scripts/record_flights.py <new-folder>` captures original browser timestamps; `scripts/render_demo.py <recording-folder>` renders that verified run at 1× and crops out the Google account strip. Credentials and raw traces stay ignored.
+> A high-performance browser automation agent written in pure Rust pairing [TypeSafe's Jev](https://docs.typesafe.ai) System-One decision engine with [Obscura Browser](https://obscura.sh/) via direct, asynchronous WebSocket Chrome DevTools Protocol (CDP).
 
 ---
 
-[Browser Use](https://github.com/browser-use/browser-use) · [Browser Harness](https://github.com/browser-use/browser-harness) · [TypeSafe speculative fan-out](https://docs.typesafe.ai/patterns/fan-out)
+## Overview
+
+Traditional browser automation agents suffer from severe latency bottlenecks caused by multi-second vision models, iterative round-trips for selector discovery, and brittle CSS/XPath heuristics. **Jev Obscura Browser** eliminates these bottlenecks by replacing heavy multi-modal reasoning loops with:
+
+1. **Dynamic Indexed Perception:** An atomic, client-side DOM snapshot script ([`snapshot.js`](src/snapshot.js)) that identifies interactable controls, extracts accessible labels/geometry, computes a cryptographic SHA-256 state fingerprint, and maps every target candidate to a dense numeric index (`[1]`, `[2]`, ...).
+2. **1-Round-Trip Speculative Fan-Out:** [TypeSafe's Jev](https://docs.typesafe.ai) decision engine evaluates the high-level operation (`CLICK`, `TYPE_TEXT`, `SELECT`, `WAIT`, `DONE`, `BLOCKED`) and all speculative target heads (`click_target`, `type_text_target`, `select_target`) simultaneously in a single HTTP request.
+3. **Pure Rust Async Execution:** A multiplexed WebSocket CDP engine connects directly to Obscura Browser to dispatch native clicks, keystrokes, and navigation with sub-millisecond protocol overhead and zero Python dependencies.
+
+---
+
+## The Dynamic Indexed Action Space
+
+Every browser observation generates a fresh, structured candidate table representing interactable elements currently visible in the DOM:
+
+```text
+[1] button    "Search flights"      · (x: 412, y: 180, w: 120, h: 40)
+[2] combobox  "Where from?"         · San Francisco (SFO)
+[3] combobox  "Where to?"           · empty
+[4] textbox   "Departure date"      · 2026-09-20
+[5] select    "Cabin class"         · [options: Economy, Business, First]
+[6] button    "Find flights"        · (x: 820, y: 180, w: 140, h: 40)
+```
+
+### Speculative Fan-Out Evaluation
+
+Rather than issuing sequential LLM calls to decide *what* to do and then *where* to click, the agent sends one structured decision request to TypeSafe Jev:
+
+```text
+                           One TypeSafe Request (1 RTT)
+                     ┌───────────────────────────────────────┐
+                     │ High-Level Operation Decision         │
+                     │  - CLICK, TYPE_TEXT, WAIT, DONE...    │
+                     ├───────────────────────────────────────┤
+Page Observation ──> │ Speculative Target Heads:             │
+ (Indexed Elements)  │  - click_target:       [1, 2, 4, 6]   │
+                     │  - type_text_target:   [2, 3, 4]      │
+                     │  - select_target:      [5]            │
+                     └───────────────────┬───────────────────┘
+                                         │
+                   Selected Operation Resolves Target
+                                         │
+        ┌────────────────────────────────┴────────────────────────────────┐
+        ▼                                                                 ▼
+If CLICK selected:                                              If TYPE_TEXT selected:
+Consume `click_target` (e.g. [6])                               Consume `type_text_target` (e.g. [3])
+Direct CDP Input Dispatch ──> Obscura                           Invoke Text LLM ──> CDP Input Dispatch
+```
+
+### Perception & Execution Loop
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Browser as Obscura Browser
+    participant Agent as Jev Agent (Rust)
+    participant TypeSafe as TypeSafe Jev
+    participant TextLLM as Text Helper (OpenAI-compat)
+
+    Agent->>Browser: Runtime.evaluate(snapshot.js)
+    Browser-->>Agent: Atomic DOM Snapshot + SHA-256 Fingerprint + Indexed Controls
+    Agent->>TypeSafe: POST /predict (Operation Head + Speculative Target Heads)
+    TypeSafe-->>Agent: Selected: Operation + Target Index [k] (1 RTT)
+    alt Operation is TYPE_TEXT
+        Agent->>TextLLM: Generate string for target [k] given goal
+        TextLLM-->>Agent: JSON payload {"text": "London"}
+    end
+    Agent->>Browser: Validate DOM Fingerprint
+    Agent->>Browser: Dispatch CDP Mouse/Key Events
+    Agent->>Browser: Await Microtask Settlement / Mutation Log
+```
+
+---
+
+## Key Features
+
+- **Pure Rust Architecture:** Zero Python runtime, zero virtual environments, instant startup, minimal memory footprint, and compile-time concurrency safety.
+- **Multiplexed WebSocket CDP Client:** Asynchronous Tokio-based WebSocket communication with Obscura Browser supporting simultaneous request/response correlation and protocol event streaming.
+- **Cryptographic DOM Fingerprinting:** Every atomic DOM snapshot calculates a SHA-256 fingerprint. Stale page updates or background mutations are detected prior to input execution, enforcing strict safety guarantees.
+- **Axum Web Inspector Server:** Built-in web inspector server listening on port `8766` providing live interactive inspection, manual step-by-step execution, probability distributions, and state visualization.
+- **Headless CLI Execution:** Fast headless batch execution via `cargo run -- run --url <URL> --goal <GOAL>`.
+- **Obscura Process Supervisor:** Automatic background process management capable of locating and spawning Obscura Browser binaries if not already running.
+
+---
+
+## Prerequisites & Obscura Setup
+
+Jev Obscura Browser communicates with an active [Obscura Browser](https://obscura.sh/) instance exposing a Chrome DevTools Protocol (CDP) WebSocket endpoint on port `9222`.
+
+### Option A: Local Obscura Binary
+If you have installed the native Obscura Browser binary:
+```bash
+obscura serve --port 9222
+```
+
+### Option B: Obscura Docker Container
+Run an isolated Obscura instance via Docker:
+```bash
+docker run -d --name obscura-browser -p 127.0.0.1:9222:9222 h4ckf0r0day/obscura
+```
+
+---
+
+## Installation & Build
+
+Build the project with Rust (Cargo):
+
+```bash
+# Clone the repository
+git clone https://github.com/PauloLuan/jev-obscura-browser.git
+cd jev-obscura-browser
+
+# Build optimized release binaries
+cargo build --release
+```
+
+The compiled binaries will be located at:
+- `target/release/jev-obscura` (Primary application binary)
+- `target/release/jev` (CLI alias)
+
+---
+
+## Configuration
+
+Copy `.env.example` to `.env` and configure your API keys and endpoints:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Description | Default |
+|---|---|---|
+| `TYPESAFE_API_KEY` | API key for the TypeSafe Jev System-One decision engine | *(Required for live agent runs)* |
+| `TEXT_MODEL_API_KEY` | API key for OpenAI-compatible text generation LLM | *(Required for `TYPE_TEXT`)* |
+| `OBSCURA_URL` | WebSocket CDP endpoint of the Obscura Browser | `ws://127.0.0.1:9222` |
+| `OBSCURA_BIN` | Path to Obscura executable if using auto-supervisor | *(Optional)* |
+| `PORT` | Local port for the Axum Web Inspector | `8766` |
+| `TEXT_MODEL_NAME` | Model name for OpenAI-compatible text generator | `inception/mercury-2.5` |
+| `TEXT_MODEL_BASE_URL` | Base URL for OpenAI-compatible endpoint | `https://openrouter.ai/api/v1` |
+
+---
+
+## Usage
+
+### 1. Web Inspector Mode
+Launch the Axum Web Inspector UI and open your browser at `http://127.0.0.1:8766`:
+
+```bash
+cargo run -- serve --port 8766
+```
+
+Open [http://127.0.0.1:8766](http://127.0.0.1:8766) in your browser:
+- Input a starting URL and natural-language goal.
+- Click **Start / Reset** to attach to Obscura and capture the initial DOM state.
+- Use **Step** for automatic continuous progression or **Choose Next** for interactive step-by-step prediction and action inspection.
+- Inspect real-time candidate probability distributions, element bounding boxes, and action history.
+
+### 2. Headless CLI Mode
+Run automated browser tasks directly from the command line:
+
+```bash
+cargo run -- run \
+  --url "https://news.ycombinator.com" \
+  --goal "Find the top story and click on its comments link" \
+  --max-steps 15
+```
+
+### 3. Diagnostics & Environment Check
+Verify connectivity to Obscura Browser, API key availability, and local configuration:
+
+```bash
+cargo run -- check
+```
+
+---
+
+## Architecture & Safety Rules
+
+- **Mutation Safety:** Never retry browser mutations blindly. Every dispatched interaction is recorded and logged before observing state changes.
+- **Freshness Checking:** Prior to executing any click or keystroke, the agent compares the target element's node identity and the current DOM SHA-256 fingerprint against the observation state. If the document has mutated or scrolled out of view, the action is rejected and state is re-acquired.
+- **Model Safety:** The decision engine and LLM are strictly sandboxed:
+  - The model **never** generates executable JavaScript, shell commands, or arbitrary CSS selectors.
+  - The model selects solely from the dense candidate indices (`[1]`, `[2]`, ...) observed by `snapshot.js`.
+  - Input text payloads for `TYPE_TEXT` are validated against strict JSON schemas before submission.
+
+---
+
+## Development & Testing
+
+All test suites and quality gates run offline without requiring paid API tokens or active browser connections:
+
+```bash
+# Verify formatting
+cargo fmt --check
+
+# Strict Clippy lint check
+cargo clippy --all-targets -- -D warnings
+
+# Run all unit and integration tests
+cargo test
+
+# Validate static JavaScript assets
+node --check static/app.js
+node --check src/snapshot.js
+
+# Build release artifacts
+cargo build --release
+```
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
