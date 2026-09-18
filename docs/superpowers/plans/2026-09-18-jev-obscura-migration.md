@@ -145,7 +145,7 @@ git commit -m "chore: scaffold Rust project and purge Python files"
 - Consumes: Serde, Reqwest
 - Produces: `ActionSpace`, `validate_choice`, `choose`, and `field_text` functions in Rust.
 
-- [ ] **Step 1: Write failing unit tests for TypeSafe choice validation and action space**
+- [x] **Step 1: Write failing unit tests for TypeSafe choice validation and action space**
 
 Write `tests/test_model.rs`:
 ```rust
@@ -181,12 +181,12 @@ fn test_action_space_partitioning() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run: `cargo test --test test_model`
 Expected: FAIL (modules do not exist).
 
-- [ ] **Step 3: Implement `src/types.rs`, `src/questions.rs`, and `src/model.rs`**
+- [x] **Step 3: Implement `src/types.rs`, `src/questions.rs`, and `src/model.rs`**
 
 - Define `Action`, `PageState`, `Choice`, `Decision`, and `TypeSafeRequest` structs with Serde.
 - Implement `action_space(actions)` partitioning into operation criteria and target maps.
@@ -194,12 +194,12 @@ Expected: FAIL (modules do not exist).
 - Implement `choose(page, goal, history)` issuing a single POST to TypeSafe API with speculative heads.
 - Implement `field_text(context)` invoking the text LLM endpoint when operation is `TYPE_TEXT`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test --test test_model`
 Expected: PASS.
 
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
 
 ```bash
 git add src/types.rs src/questions.rs src/model.rs tests/test_model.rs
