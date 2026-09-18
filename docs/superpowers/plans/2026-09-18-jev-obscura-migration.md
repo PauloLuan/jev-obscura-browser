@@ -353,7 +353,7 @@ git commit -m "feat: implement Browser DOM perception and Agent execution loop i
 - Consumes: `axum`, `tower-http`, `clap`
 - Produces: Working CLI executable `jev-obscura` and web inspector on `http://127.0.0.1:8766`.
 
-- [ ] **Step 1: Update `static/index.html`**
+- [x] **Step 1: Update `static/index.html`**
 
 Update UI branding:
 - Change title to `Jev Obscura Browser · Obscura × TypeSafe`.
@@ -361,7 +361,7 @@ Update UI branding:
 - Remove link to `demo.mp4`.
 - Update footer to `Obscura × TypeSafe · Experimental baseline`.
 
-- [ ] **Step 2: Implement `src/demo.rs` Axum server**
+- [x] **Step 2: Implement `src/demo.rs` Axum server**
 
 - Serve static files from `./static` (or embedded in release build).
 - Implement REST endpoints:
@@ -370,21 +370,21 @@ Update UI branding:
   - `POST /api/step` -> performs single step.
   - `GET /api/state` -> returns current step, page state, and screenshot.
 
-- [ ] **Step 3: Implement CLI in `src/main.rs`**
+- [x] **Step 3: Implement CLI in `src/main.rs`**
 
 - Support subcommands and flags:
   - `jev-obscura serve --port 8766`: runs interactive web inspector.
   - `jev-obscura run --url <URL> --goal <GOAL>`: runs headless in terminal.
   - `jev-obscura check`: health checks Obscura and TypeSafe API connectivity.
 
-- [ ] **Step 4: Verify web asset syntax and Rust compilation**
+- [x] **Step 4: Verify web asset syntax and Rust compilation**
 
 Run: `node --check static/app.js`
 Expected: 0 syntax errors.
 Run: `cargo check --bin jev-obscura`
 Expected: 0 errors.
 
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
 
 ```bash
 git add src/demo.rs src/main.rs src/lib.rs static/index.html
