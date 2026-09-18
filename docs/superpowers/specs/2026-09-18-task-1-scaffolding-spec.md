@@ -18,7 +18,7 @@ Scaffold the Rust crate for `jev-obscura-browser` with a valid `Cargo.toml`, pla
 ## 2. Acceptance Criteria & Gherkin Scenarios
 
 ### Scenario 1: Rust Crate Scaffolding & Dependency Resolution
-- **Given** `Cargo.toml` at workspace root configured with package `jev-obscura-browser` (v0.1.0, edition 2021), lib `jev_obscura_browser` (`src/lib.rs`), and binaries `jev-obscura` and `jev` (`src/main.rs`).
+- **Given** `Cargo.toml` at workspace root configured with package `jev-obscura-browser` (v0.1.0, edition 2021), lib `jev_obscura_browser` (`src/lib.rs`), and binaries `jev-obscura` (`src/main.rs`) and `jev` (`src/bin/jev.rs`).
 - **When** executing `cargo check`, `cargo check --bin jev-obscura`, `cargo check --bin jev`, and `cargo test`.
 - **Then** cargo successfully parses `Cargo.toml`, resolves all dependencies, and compiles without warnings or errors (exit code 0).
 
@@ -83,4 +83,12 @@ Scaffold the Rust crate for `jev-obscura-browser` with a valid `Cargo.toml`, pla
    - `node --check src/snapshot.js`
 3. **Filesystem audit:**
    - Verify non-existence of `jev_ultrafast/`, `pyproject.toml`, `uv.lock`, `tests/test_agent.py`.
-   - Verify existence of `Cargo.toml`, `src/lib.rs`, `src/main.rs`, `src/snapshot.js`, `static/app.js`, `static/index.html`.
+   - Verify existence of `Cargo.toml`, `src/lib.rs`, `src/main.rs`, `src/bin/jev.rs`, `src/snapshot.js`, `static/app.js`, `static/index.html`.
+
+---
+
+## 6. Revisions & Corrections
+
+### Revision Round 1 (2026-09-18)
+- **Finding:** Pointing multiple `[[bin]]` targets (`jev-obscura` and `jev`) to the single file `src/main.rs` caused `cargo check --all-targets` and `cargo test` to emit compiler warning `file src/main.rs found to be present in multiple build targets`.
+- **Correction:** Separated binary paths: `jev-obscura` targets `src/main.rs` and `jev` targets `src/bin/jev.rs`. Both binaries execute cleanly with ZERO warnings and ZERO errors.
