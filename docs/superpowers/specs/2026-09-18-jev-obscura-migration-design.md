@@ -1,183 +1,177 @@
-# Jev Obscura Browser Migration — Technical Design Specification
+# Jev Obscura Browser (Rust Edition) — Technical Design Specification
 
 **Date:** 2026-09-18  
 **Author:** Paulo Luan / Antigravity  
 **Status:** Approved  
+**Language / Stack:** Rust (Tokio, Axum, Tokio-Tungstenite, Reqwest, Serde)  
 **Target Repository:** `PauloLuan/jev-obscura-browser`  
 
 ---
 
-## 1. Overview & Context
+## 1. Overview & Architectural Motivation
 
-This specification defines the architectural migration of the project from **Browser Use** (`browser-use` / `browser-harness`) to **Obscura Browser** (`https://obscura.sh/`), a lightweight, high-performance headless browser engine written in Rust that speaks the Chrome DevTools Protocol (CDP) over WebSocket.
+This specification defines the architectural migration and complete rewrite of the browser agent from Python (`jev-ultrafast` / `browser-use`) to **Rust** (`jev-obscura-browser`), powered natively by **Obscura Browser** (`https://obscura.sh/`).
 
-In addition to replacing the browser engine, the project is completely rebranded from `jev-ultrafast` to `jev-obscura-browser`, legacy demonstration assets (videos, gifs, old benchmark measurements) from browser-use are removed, documentation and configuration are updated, and the git history is reinitialized cleanly against `PauloLuan/jev-obscura-browser`.
+Obscura is an open-source, high-performance headless browser engine written in Rust that speaks the Chrome DevTools Protocol (CDP) over WebSocket with sub-50ms cold starts, 10× leaner memory than Chrome, and built-in anti-detection. By implementing the agent runtime in Rust:
+1. The entire stack aligns natively with Obscura's Rust-first ecosystem.
+2. End-to-end decision and action latency is minimized with zero Python runtime overhead.
+3. Strong compile-time guarantees enforce state machine correctness and avoid runtime type errors in element selection and CDP dispatch.
+4. The deployment artifact becomes a single compiled native binary (`jev-obscura`) with embedded static assets.
 
 ---
 
 ## 2. Goals & Non-Goals
 
 ### Goals
-1. **Engine Replacement:** Remove `browser-harness` and any `browser-use` dependency. Implement a clean, zero-daemon, native synchronous WebSocket CDP client (`websockets.sync.client`) connecting to `ws://127.0.0.1:9222` (configurable via `OBSCURA_CDP_URL`).
-2. **Process Lifecycle:** Provide an `ensure_obscura()` utility that checks for a responsive Obscura server at the configured CDP URL. If unresponsive and the `obscura` binary exists on the host (`PATH` or `OBSCURA_BIN`), auto-spawn `obscura serve --port 9222 --allow-file-access --allow-private-network` in the background. If unavailable, provide actionable guidance (Docker / download command).
-3. **Rebranding:** Rename package `jev_ultrafast` to `jev_obscura_browser`, project name in `pyproject.toml` to `jev-obscura-browser`, and CLI command to `jev-obscura` (with alias `jev`).
-4. **Legacy Asset Cleanup:** Delete old demonstration footage (`docs/demo.mp4`, `docs/demo.gif`, `docs/inspector.png`, `docs/flights-result.png`), old measurement JSON files (`docs/flights-measurement.json`, etc.), old performance markdown docs referencing the waitlist, and obsolete video rendering scripts.
-5. **Visual Identity:** Create a fresh SVG banner (`docs/banner.svg`) reflecting "Jev Obscura Browser · Obscura × TypeSafe".
-6. **Documentation & Web UI:** Rewrite `README.md`, `AGENTS.md`, and `jev_obscura_browser/static/index.html` to reflect Obscura and remove all references to Browser Use Cloud / waitlist.
-7. **Offline Contracts & TDD:** Preserve the core contract that `pytest` runs offline without requiring paid APIs or live browsers, testing CDP communication through mocks while supporting live runs when Obscura is active.
-8. **Git Reinitialization:** Reset git history (`git init`), create initial clean commit, and configure `origin` to `https://github.com/PauloLuan/jev-obscura-browser.git`.
+1. **Language Migration:** Completely replace the Python codebase with a idiomatic Rust implementation using Tokio, Serde, Reqwest, and Tokio-Tungstenite.
+2. **Obscura CDP Engine:** Implement an asynchronous WebSocket CDP client (`tokio-tungstenite`) communicating directly with `obscura serve` at `ws://127.0.0.1:9222` (configurable via `OBSCURA_CDP_URL`), with auto-spawning of the local `obscura` binary if not already running.
+3. **TypeSafe Jev Integration:** Replicate the 1-round-trip speculative operation/target decision protocol (`model.rs`, `questions.rs`) querying TypeSafe's Jev model with strong typed deserialization.
+4. **Text Generation Helper:** Call OpenAI-compatible endpoints (OpenRouter `inception/mercury-2.5`, Gemini, etc.) using `reqwest` only when the selected operation is `TYPE_TEXT`.
+5. **Inspector Web UI Server:** Implement an `axum` web server serving the interactive inspector UI (`static/index.html`, `static/app.js`, `static/style.css`, `static/fixture.html`) on `http://127.0.0.1:8766` with SSE/REST control endpoints.
+6. **Artifact & Legacy Evidence Purge:** Remove all Python files (`jev_ultrafast/`, `pyproject.toml`, `uv.lock`, `.venv`), old demo videos (`demo.mp4`), GIFs (`demo.gif`), screenshots, and outdated benchmark reports from `browser-use`.
+7. **Visual Identity & Docs:** Create a fresh SVG banner (`docs/banner.svg`) matching Obscura branding, rewrite `README.md` and `AGENTS.md` for Rust/Cargo.
+8. **Testing & Quality Gates:** Provide offline Rust unit and integration tests (`cargo test`) mocking CDP and TypeSafe HTTP responses, enforcing `cargo clippy -- -D warnings` and `cargo build --release`.
+9. **Git Reset:** Reinitialize git history from scratch (`git init -b main`) and push a clean initial commit to `https://github.com/PauloLuan/jev-obscura-browser.git`.
 
 ### Non-Goals
-- Changing the TypeSafe decision engine or prompt loop (`model.py`, `questions.py`).
-- Adding complex multi-browser switching logic (Obscura is the primary and only supported engine).
-- Running paid APIs in automated test suites.
+- Compiling V8 from source in-process (using prebuilt `obscura` binary via WebSocket CDP is chosen for fast <5s compilation).
+- Supporting multi-browser backends (Obscura is the primary and only supported engine).
+- Calling paid APIs in automated test suites.
 
 ---
 
-## 3. Architecture & Component Details
-
-### 3.1 CDP Communication Layer (`jev_obscura_browser/cdp.py`)
-
-Rather than relying on an external IPC daemon (like `browser-harness`), communication with Obscura occurs directly over WebSocket:
-
-- **Protocol:** Chrome DevTools Protocol over WebSocket (default endpoint: `ws://127.0.0.1:9222`).
-- **Client Implementation:** Built using `websockets.sync.client.connect`.
-  - Maintains persistent WebSocket connection per browser instance.
-  - Sends JSON-RPC commands: `{"id": int, "method": str, "params": dict, "sessionId": str (optional)}`.
-  - Tracks request/response correlation via monotonically increasing message IDs.
-  - Handles session attachment (`Target.attachToTarget` with `flatten: True`) and passes `sessionId` on subsequent scoped calls.
-- **Lifecycle Management (`ensure_obscura`):**
-  - Attempts socket/HTTP probe to `127.0.0.1:9222`.
-  - If unreachable:
-    - Checks for `obscura` executable in `PATH` or `OBSCURA_BIN`.
-    - If found: spawns `obscura serve --port 9222 --allow-file-access --allow-private-network` in a detached background process and waits up to 3 seconds for port readiness.
-    - If not found: raises a descriptive `RuntimeError` instructing the user to start Obscura via Docker (`docker run -d -p 127.0.0.1:9222:9222 h4ckf0r0day/obscura`) or install the binary (`https://obscura.sh/`).
-
-### 3.2 Browser Interface (`jev_obscura_browser/browser.py`)
-
-The `Browser` class retains its public API:
-- `Browser(url: str, cdp_url: str | None = None)`
-  - Calls `ensure_obscura()`.
-  - Creates target tab via `Target.createTarget(url="about:blank")`.
-  - Attaches to target via `Target.attachToTarget(targetId=..., flatten=True)`.
-  - Configures emulation: `Emulation.setDeviceMetricsOverride(width=1120, height=780, ...)`.
-  - Navigates to `url` via `Page.navigate` and polls `document.readyState == "complete"`.
-- `observe(screenshot: bool = True) -> dict`
-  - Evaluates `snapshot.js` atomically inside the page context.
-  - Generates deterministic fingerprint of observed DOM controls and values.
-  - Captures JPEG screenshot via `Page.captureScreenshot` when requested.
-- `act(action: dict, page: dict, text: str | None = None) -> dict`
-  - Validates freshness: element node and guards must match current DOM state.
-  - Executes operation:
-    - `click`: calculates target center coordinates, dispatches mouse press/release.
-    - `fill`: focuses element, selects all, inserts text via `Input.insertText`.
-    - `select`: updates dropdown option value and dispatches change events.
-    - `scroll`: dispatches mouseWheel event.
-    - `wait`: sleeps 100ms.
-- `close()`: closes target tab via `Target.closeTarget` and closes WebSocket.
-
-### 3.3 Rebranding & Package Structure
+## 3. System Architecture & Components
 
 ```
 jev-obscura-browser/
+├── Cargo.toml
+├── Cargo.lock
 ├── AGENTS.md
 ├── LICENSE
 ├── README.md
-├── pyproject.toml
-├── uv.lock
 ├── .env.example
 ├── docs/
-│   ├── banner.svg                   (new Obscura × TypeSafe banner)
+│   ├── banner.svg                   (new Obscura × TypeSafe dark banner)
 │   └── superpowers/
 │       ├── specs/
 │       │   └── 2026-09-18-jev-obscura-migration-design.md
 │       └── plans/
 │           └── 2026-09-18-jev-obscura-migration.md
-├── jev_obscura_browser/
-│   ├── __init__.py
-│   ├── agent.py
-│   ├── browser.py
-│   ├── cdp.py                       (new direct CDP client)
-│   ├── demo.py
-│   ├── model.py
-│   ├── questions.py
-│   ├── snapshot.js
-│   └── static/
-│       ├── app.js
-│       ├── fixture.html
-│       ├── index.html
-│       └── style.css
-├── examples/
-│   ├── flights.py
-│   └── run.py
-├── scripts/
-│   ├── check_guards.py
-│   ├── render_fixture.py
-│   └── smoke.py
+├── static/                          (embedded into binary via rust-embed or served from disk)
+│   ├── app.js
+│   ├── fixture.html
+│   ├── index.html
+│   └── style.css
+├── src/
+│   ├── lib.rs                       (public library root)
+│   ├── main.rs                      (CLI entrypoint: jev-obscura)
+│   ├── agent.rs                     (agent loop: observe -> choose -> act)
+│   ├── browser.rs                   (browser high-level abstractions & snapshot evaluator)
+│   ├── cdp.rs                       (tokio-tungstenite CDP client & process supervisor)
+│   ├── demo.rs                      (axum web server for interactive inspector UI)
+│   ├── model.rs                     (TypeSafe API client, choice validation, text LLM)
+│   ├── questions.rs                 (TypeSafe dynamic criteria & schema generation)
+│   ├── snapshot.js                  (atomic DOM AX snapshot script)
+│   └── types.rs                     (serde structs for DOM elements, actions, decisions)
 └── tests/
-    ├── test_agent.py
-    └── test_cdp.py                  (new unit tests for CDP client)
-```
-
-### 3.4 Files to Remove
-
-The following legacy files are deleted:
-- `docs/demo.mp4`
-- `docs/demo.gif`
-- `docs/inspector.png`
-- `docs/flights-result.png`
-- `docs/flights-measurement.json`
-- `docs/flights-prepared-measurement.json`
-- `docs/full-speed-measurement.json`
-- `docs/measurement.json`
-- `docs/performance.md`
-- `docs/performance-prepared.md`
-- `docs/launch-draft.md`
-- `scripts/record_flights.py`
-- `scripts/measure_flights.py`
-- `scripts/render_demo.py`
-
----
-
-## 4. Dependencies & Environment Configuration
-
-### `pyproject.toml`
-- Package name: `jev-obscura-browser`
-- Version: `0.1.0`
-- Description: `A fast browser agent using Obscura and TypeSafe.`
-- Dependencies:
-  - `websockets>=13.0,<15`
-  - `httpx[http2]>=0.28,<1`
-  - *(Drop `browser-harness`)*
-- CLI scripts:
-  - `jev-obscura = "jev_obscura_browser.demo:main"`
-  - `jev = "jev_obscura_browser.demo:main"`
-
-### `.env.example`
-```bash
-TYPESAFE_API_KEY=
-TEXT_MODEL_API_KEY=
-TEXT_MODEL_BASE_URL=https://openrouter.ai/api/v1
-TEXT_MODEL_NAME=inception/mercury-2.5
-TEXT_MODEL_SUPPORTS_REASONING=false
-OBSCURA_CDP_URL=ws://127.0.0.1:9222
-OBSCURA_BIN=obscura
+    ├── test_agent.rs                (agent state machine and contract tests)
+    └── test_cdp.rs                  (CDP client message routing and error handling tests)
 ```
 
 ---
 
-## 5. Testing & Quality Gates
+## 4. Component Specifications
 
-1. **Unit Tests (`tests/test_cdp.py`):**
-   - Test JSON-RPC serialization and ID routing.
-   - Test session scoped requests (`sessionId`).
-   - Test timeout handling and error response parsing.
-   - Test `ensure_obscura` probe logic with mocks.
-2. **Agent Tests (`tests/test_agent.py`):**
-   - Update all import paths to `jev_obscura_browser`.
-   - Ensure all 14 tests pass without external network or API keys.
-3. **Lint & Static Checks:**
-   - `uv run ruff check .`
-   - `uv run pytest`
-   - `node --check jev_obscura_browser/static/app.js`
-   - `uv build`
+### 4.1 CDP Client (`src/cdp.rs`)
+- **Protocol:** JSON-RPC over WebSocket using `tokio-tungstenite`.
+- **Concurrency:** Uses an atomic counter for message `id` and a thread-safe map of oneshot response senders `Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, CdpError>>>>>`.
+- **Target Sessions:** Passes `sessionId` field when interacting with attached tabs.
+- **Process Supervisor (`ensure_obscura`):**
+  - Probes `127.0.0.1:9222` via TCP handshake.
+  - If unreachable: searches `PATH` and `OBSCURA_BIN` for `obscura`.
+  - If found: spawns `obscura serve --port 9222 --allow-file-access --allow-private-network` in detached background mode and waits up to 3.0s for port readiness.
+  - If not found: returns a structured error instructing the user to run Docker or download the precompiled binary from `https://obscura.sh/`.
+
+### 4.2 Browser & DOM Perception (`src/browser.rs`)
+- High-level browser interface:
+  - `Browser::new(url: &str, cdp_url: Option<&str>) -> Result<Self>`
+  - `observe(&mut self, screenshot: bool) -> Result<PageState>`
+  - `act(&mut self, action: &Action, page: &PageState, text: Option<&str>) -> Result<ActionResult>`
+  - `fresh(&self, page: &PageState, action: Option<&Action>) -> Result<bool>`
+  - `close(&mut self) -> Result<()>`
+- Evaluates `snapshot.js` atomically using `Runtime.evaluate` to return visible elements, bounding boxes, roles, and values.
+- Generates a SHA-256 fingerprint from `(url, text, actions, scroll)` to detect page settling.
+- Emits `StalePage` errors when DOM elements mutate or shift before an action executes.
+
+### 4.3 TypeSafe Decision Engine & LLM (`src/model.rs`, `src/questions.rs`)
+- `ActionSpace`: Partitions observed DOM nodes into candidate actions (`CLICK`, `TYPE_TEXT`, `SELECT`, `SCROLL_UP`, `SCROLL_DOWN`, `WAIT`, `DONE`).
+- Submits dynamic criteria to TypeSafe endpoint (`https://api.typesafe.ai/v1/predict` / `/action`) requesting decisions on `operation` and all speculative target heads (`click_target`, `type_text_target`, `select_target`) in **one network round-trip**.
+- Only executes the target corresponding to the selected operation.
+- If operation is `TYPE_TEXT`: invokes the OpenAI-compatible text endpoint (`TEXT_MODEL_BASE_URL`) with the element context and goal, caching text on identical retries.
+
+### 4.4 Web Inspector Server (`src/demo.rs`)
+- Built with `axum` and `tower-http`.
+- Serves static assets on `http://127.0.0.1:8766`.
+- Endpoints:
+  - `GET /`: Serves `index.html`.
+  - `POST /api/start`: Starts a new task with goal and URL.
+  - `POST /api/step`: Manually steps to the next observation or execution.
+  - `POST /api/auto`: Runs continuously until done or blocked.
+  - `GET /api/state`: Returns current agent state and latest screenshot.
+
+---
+
+## 5. Cargo Configuration (`Cargo.toml`)
+
+```toml
+[package]
+name = "jev-obscura-browser"
+version = "0.1.0"
+edition = "2021"
+description = "Fast browser agent in Rust using Obscura and TypeSafe."
+license = "MIT"
+readme = "README.md"
+
+[[bin]]
+name = "jev-obscura"
+path = "src/main.rs"
+
+[[bin]]
+name = "jev"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1.43", features = ["full"] }
+tokio-tungstenite = { version = "0.26", features = ["connect"] }
+futures-util = "0.3"
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+axum = "0.8"
+tower-http = { version = "0.6", features = ["fs", "cors"] }
+clap = { version = "4.5", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+dotenvy = "0.15"
+anyhow = "1.0"
+thiserror = "2.0"
+sha2 = "0.10"
+
+[dev-dependencies]
+wiremock = "0.6"
+```
+
+---
+
+## 6. Testing & Quality Verification
+
+1. **Unit & Contract Tests (`tests/`):**
+   - Mocked CDP frame serialization and deserialization.
+   - Offline TypeSafe choice validation tests (`validate_choice`).
+   - Agent state machine transitions and stale page error handling.
+2. **Linters & Formatters:**
+   - `cargo fmt --check`
+   - `cargo clippy -- -D warnings`
+   - `cargo test`
+   - `cargo build --release`
+   - `node --check static/app.js`

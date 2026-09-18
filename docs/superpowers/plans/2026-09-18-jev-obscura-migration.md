@@ -1,4 +1,4 @@
-# Jev Obscura Browser Migration Implementation Plan
+# Jev Obscura Browser (Rust) Implementation Plan
 
 > **For agentic workers:** REQUIRED: execute with `/luan-coder` (or
 > `/old-coder` per task). Each task is one fresh external harness session.
@@ -7,11 +7,11 @@
 
 **GitHub Issue:** #1 — <https://github.com/PauloLuan/jev-obscura-browser/issues/1>
 
-**Goal:** Migrate the browser agent from Browser Use to Obscura Browser (WebSocket CDP), rebrand the package to `jev-obscura-browser`, clean legacy demonstration evidence, and reinitialize git cleanly.
+**Goal:** Rewrite the browser agent from Python to Rust, using Obscura Browser over WebSocket CDP, rebranding to `jev-obscura-browser`, purging legacy evidence, and reinitializing git cleanly.
 
-**Architecture:** Replace the `browser-harness` daemon with a native synchronous WebSocket CDP client (`websockets.sync.client`) connecting to Obscura (`ws://127.0.0.1:9222`) with an auto-spawn fallback. Rename `jev_ultrafast` to `jev_obscura_browser`, purge legacy demo media and waitlist docs, update README and branding assets, and reinitialize git against `PauloLuan/jev-obscura-browser`.
+**Architecture:** Implement a high-performance Rust browser agent using Tokio, Serde, and Tokio-Tungstenite to connect to Obscura (`ws://127.0.0.1:9222`) with auto-spawn fallback. Integrate TypeSafe Jev for 1-round-trip speculative decisions, provide an Axum-powered inspector UI server, purge all Python files and legacy browser-use media, and reinitialize git against `PauloLuan/jev-obscura-browser`.
 
-**Tech Stack:** Python 3.12+, `websockets`, `httpx`, Obscura (`https://obscura.sh/`), TypeSafe Jev, UV, Pytest, Ruff.
+**Tech Stack:** Rust (Tokio 1.43, Tokio-Tungstenite 0.26, Axum 0.8, Reqwest 0.12, Serde 1.0, Clap 4.5), Obscura (`https://obscura.sh/`), TypeSafe Jev.
 
 **Spec:** docs/superpowers/specs/2026-09-18-jev-obscura-migration-design.md
 
@@ -30,425 +30,409 @@
 - Code-owned node IDs refer to actual observed elements, never model-generated selectors or arbitrary scripts.
 - Never retry a browser mutation.
 - Maintain full compatibility with TypeSafe one-request operation/target policy.
-- All verification commands must pass: `uv run ruff check .`, `uv run pytest`, `node --check jev_obscura_browser/static/app.js`, `uv build`.
+- All verification commands must pass: `cargo clippy -- -D warnings`, `cargo test`, `node --check static/app.js`, `cargo build --release`.
 
 ---
 
-### Task 1: Package Renaming & Dependency Updates
+### Task 1: Rust Project Scaffolding & Python Purge
 
 **Files:**
-- Modify: `pyproject.toml`
+- Create: `Cargo.toml`
+- Create: `src/lib.rs`
 - Modify: `.env.example`
-- Move: `jev_ultrafast/` -> `jev_obscura_browser/`
-- Modify: `uv.lock`
+- Move: `jev_ultrafast/static/` -> `static/`
+- Move: `jev_ultrafast/snapshot.js` -> `src/snapshot.js`
+- Delete: `pyproject.toml`, `uv.lock`, `jev_ultrafast/`
 
 **Interfaces:**
-- Consumes: Existing project structure
-- Produces: `jev_obscura_browser` package importable with `websockets` installed and `browser-harness` removed.
+- Consumes: Filesystem
+- Produces: Compilable Rust crate root with dependencies configured and static assets placed.
 
-- [ ] **Step 1: Update `pyproject.toml`**
+- [ ] **Step 1: Write `Cargo.toml`**
 
-Replace dependencies and package name:
+Create `Cargo.toml`:
 ```toml
-[project]
+[package]
 name = "jev-obscura-browser"
 version = "0.1.0"
-description = "A fast browser agent using Obscura and TypeSafe."
-readme = "README.md"
+edition = "2021"
+description = "Fast browser agent in Rust using Obscura and TypeSafe."
 license = "MIT"
-requires-python = ">=3.12"
-dependencies = [
-    "websockets>=13.0,<15",
-    "httpx[http2]>=0.28,<1",
-]
+readme = "README.md"
 
-[project.scripts]
-jev-obscura = "jev_obscura_browser.demo:main"
-jev = "jev_obscura_browser.demo:main"
+[lib]
+name = "jev_obscura_browser"
+path = "src/lib.rs"
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[[bin]]
+name = "jev-obscura"
+path = "src/main.rs"
 
-[dependency-groups]
-dev = [
-    "pytest>=8.4,<9",
-    "ruff>=0.14,<1",
-    "pillow>=11,<13",
-]
+[[bin]]
+name = "jev"
+path = "src/main.rs"
 
-[tool.ruff]
-line-length = 120
-
-[tool.ruff.lint]
-select = ["E", "F", "I"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
+[dependencies]
+tokio = { version = "1.43", features = ["full"] }
+tokio-tungstenite = { version = "0.26", features = ["connect"] }
+futures-util = "0.3"
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+axum = { version = "0.8", features = ["ws"] }
+tower-http = { version = "0.6", features = ["fs", "cors"] }
+clap = { version = "4.5", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dotenvy = "0.15"
+anyhow = "1.0"
+thiserror = "2.0"
+sha2 = "0.10"
 ```
 
-- [ ] **Step 2: Rename package directory**
+- [ ] **Step 2: Relocate static assets and snapshot script**
 
 ```bash
-git mv jev_ultrafast jev_obscura_browser
+mkdir -p src static
+mv jev_ultrafast/static/* static/
+mv jev_ultrafast/snapshot.js src/snapshot.js
 ```
 
-- [ ] **Step 3: Update `.env.example`**
+- [ ] **Step 3: Remove legacy Python package and lockfiles**
 
-Update `.env.example` to include Obscura configuration:
 ```bash
-TYPESAFE_API_KEY=
-TEXT_MODEL_API_KEY=
-# OpenRouter is the default text helper backend.
-TEXT_MODEL_BASE_URL=https://openrouter.ai/api/v1
-TEXT_MODEL_NAME=inception/mercury-2.5
-TEXT_MODEL_SUPPORTS_REASONING=false
-OBSCURA_CDP_URL=ws://127.0.0.1:9222
-OBSCURA_BIN=obscura
+rm -rf jev_ultrafast pyproject.toml uv.lock .venv tests/test_agent.py
 ```
 
-- [ ] **Step 4: Sync dependencies with uv**
+- [ ] **Step 4: Create placeholder `src/lib.rs` and `src/main.rs`**
 
-Run: `uv sync`
-Expected: `uv.lock` updated, `browser-harness` removed, `websockets` installed.
+```rust
+// src/lib.rs
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+```
 
-- [ ] **Step 5: Commit changes**
+```rust
+// src/main.rs
+fn main() {
+    println!("jev-obscura-browser v{}", jev_obscura_browser::VERSION);
+}
+```
+
+- [ ] **Step 5: Verify initial compilation**
+
+Run: `cargo check`
+Expected: Download crates and compile cleanly with exit code 0.
+
+- [ ] **Step 6: Commit changes**
 
 ```bash
-git add pyproject.toml .env.example jev_obscura_browser uv.lock
-git commit -m "chore: rename package to jev-obscura-browser and swap dependencies"
+git add Cargo.toml Cargo.lock src/ static/ .env.example
+git add -u pyproject.toml uv.lock jev_ultrafast/
+git commit -m "chore: scaffold Rust project and purge Python files"
 ```
 
 ---
 
-### Task 2: Native WebSocket CDP Client
+### Task 2: Data Types & TypeSafe Decision Engine in Rust
 
 **Files:**
-- Create: `jev_obscura_browser/cdp.py`
-- Create: `tests/test_cdp.py`
+- Create: `src/types.rs`
+- Create: `src/questions.rs`
+- Create: `src/model.rs`
+- Create: `tests/test_model.rs`
 
 **Interfaces:**
-- Consumes: `websockets.sync.client`
-- Produces: `CDPClient` class and `ensure_obscura()` helper in `jev_obscura_browser.cdp`
+- Consumes: Serde, Reqwest
+- Produces: `ActionSpace`, `validate_choice`, `choose`, and `field_text` functions in Rust.
 
-- [ ] **Step 1: Write failing unit tests for CDPClient**
+- [ ] **Step 1: Write failing unit tests for TypeSafe choice validation and action space**
 
-Write `tests/test_cdp.py`:
-```python
-import json
-from unittest.mock import MagicMock, patch
-import pytest
-from jev_obscura_browser.cdp import CDPClient, ensure_obscura
+Write `tests/test_model.rs`:
+```rust
+use jev_obscura_browser::types::{Action, Choice, PageState};
+use jev_obscura_browser::model::{action_space, validate_choice};
+use std::collections::HashSet;
 
-def test_cdp_client_send_and_receive():
-    mock_ws = MagicMock()
-    mock_ws.recv.return_value = json.dumps({"id": 1, "result": {"targetId": "xyz"}})
-    client = CDPClient(ws=mock_ws)
-    res = client.call("Target.createTarget", url="about:blank")
-    assert res == {"targetId": "xyz"}
-    sent = json.loads(mock_ws.send.call_args[0][0])
-    assert sent["id"] == 1
-    assert sent["method"] == "Target.createTarget"
-    assert sent["params"] == {"url": "about:blank"}
+#[test]
+fn test_invalid_choice_rejected() {
+    let mut c = Choice {
+        choice: "a".into(),
+        confidence: 1.0,
+        probabilities: [("a".into(), 1.0), ("b".into(), 0.0)].into_iter().collect(),
+    };
+    let allowed: HashSet<String> = ["a".into(), "b".into()].into_iter().collect();
+    assert!(validate_choice(&c, &allowed).is_ok());
 
-def test_cdp_client_handles_session_id():
-    mock_ws = MagicMock()
-    mock_ws.recv.return_value = json.dumps({"id": 1, "result": {"value": 42}})
-    client = CDPClient(ws=mock_ws)
-    res = client.call("Runtime.evaluate", session_id="sess-123", expression="1+1")
-    assert res == {"value": 42}
-    sent = json.loads(mock_ws.send.call_args[0][0])
-    assert sent["sessionId"] == "sess-123"
+    c.choice = "unseen".into();
+    assert!(validate_choice(&c, &allowed).is_err());
+}
 
-def test_cdp_client_raises_on_error():
-    mock_ws = MagicMock()
-    mock_ws.recv.return_value = json.dumps({"id": 1, "error": {"message": "Invalid method"}})
-    client = CDPClient(ws=mock_ws)
-    with pytest.raises(RuntimeError, match="Invalid method"):
-        client.call("Bad.method")
-
-def test_ensure_obscura_running_when_probe_succeeds():
-    with patch("socket.create_connection"):
-        # Does not raise
-        ensure_obscura("ws://127.0.0.1:9222")
-
-def test_ensure_obscura_fails_when_unreachable_and_no_binary():
-    with patch("socket.create_connection", side_effect=OSError("connection refused")):
-        with patch("shutil.which", return_value=None):
-            with pytest.raises(RuntimeError, match="Obscura browser is not running"):
-                ensure_obscura("ws://127.0.0.1:9222")
+#[test]
+fn test_action_space_partitioning() {
+    let actions = vec![
+        Action { id: "e1".into(), kind: "fill".into(), label: "Search".into(), role: "textbox".into(), value: "".into(), node: Some(10) },
+        Action { id: "e2".into(), kind: "click".into(), label: "Go".into(), role: "button".into(), value: "".into(), node: Some(20) },
+    ];
+    let (elements, targets, controls) = action_space(&actions);
+    assert_eq!(elements.len(), 2);
+    assert!(targets.contains_key("TYPE_TEXT"));
+    assert!(targets.contains_key("CLICK"));
+    assert!(controls.contains(&"WAIT".to_string()));
+}
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: Run test to verify failure**
 
-Run: `uv run pytest tests/test_cdp.py -v`
-Expected: FAIL with `ModuleNotFoundError` or `ImportError`.
+Run: `cargo test --test test_model`
+Expected: FAIL (modules do not exist).
 
-- [ ] **Step 3: Implement `jev_obscura_browser/cdp.py`**
+- [ ] **Step 3: Implement `src/types.rs`, `src/questions.rs`, and `src/model.rs`**
 
-Write `jev_obscura_browser/cdp.py`:
-```python
-"""Direct synchronous WebSocket CDP client for Obscura."""
-
-import json
-import os
-import shutil
-import socket
-import subprocess
-import time
-from urllib.parse import urlparse
-from websockets.sync.client import connect
-
-DEFAULT_CDP_URL = "ws://127.0.0.1:9222"
-
-def is_port_open(host: str, port: int, timeout: float = 0.5) -> bool:
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return True
-    except OSError:
-        return False
-
-def ensure_obscura(cdp_url: str = DEFAULT_CDP_URL) -> None:
-    parsed = urlparse(cdp_url)
-    host = parsed.hostname or "127.0.0.1"
-    port = parsed.port or 9222
-    if is_port_open(host, port):
-        return
-
-    bin_path = os.getenv("OBSCURA_BIN") or shutil.which("obscura")
-    if bin_path:
-        subprocess.Popen(
-            [bin_path, "serve", "--port", str(port), "--allow-file-access", "--allow-private-network"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-        deadline = time.monotonic() + 3.0
-        while time.monotonic() < deadline:
-            if is_port_open(host, port, timeout=0.1):
-                return
-            time.sleep(0.05)
-
-    raise RuntimeError(
-        f"Obscura browser is not running at {cdp_url}.\n"
-        "Start it with Docker: docker run -d -p 127.0.0.1:9222:9222 h4ckf0r0day/obscura\n"
-        "Or download Obscura from https://obscura.sh/ and run: obscura serve --port 9222"
-    )
-
-class CDPClient:
-    def __init__(self, cdp_url: str = DEFAULT_CDP_URL, ws=None):
-        self.cdp_url = cdp_url
-        self._ws = ws
-        self._id = 0
-
-    @property
-    def ws(self):
-        if self._ws is None:
-            ensure_obscura(self.cdp_url)
-            self._ws = connect(self.cdp_url, max_size=20 * 1024 * 1024)
-        return self._ws
-
-    def call(self, method: str, session_id: str | None = None, **params) -> dict:
-        self._id += 1
-        req_id = self._id
-        msg = {"id": req_id, "method": method, "params": params}
-        if session_id:
-            msg["sessionId"] = session_id
-        self.ws.send(json.dumps(msg))
-
-        while True:
-            raw = self.ws.recv()
-            data = json.loads(raw)
-            if data.get("id") == req_id:
-                if "error" in data:
-                    raise RuntimeError(data["error"].get("message", str(data["error"])))
-                return data.get("result", {})
-
-    def close(self):
-        if self._ws:
-            try:
-                self._ws.close()
-            except Exception:
-                pass
-            self._ws = None
-```
+- Define `Action`, `PageState`, `Choice`, `Decision`, and `TypeSafeRequest` structs with Serde.
+- Implement `action_space(actions)` partitioning into operation criteria and target maps.
+- Implement `validate_choice(choice, allowed)` ensuring choice exists and probabilities sum to 1.0.
+- Implement `choose(page, goal, history)` issuing a single POST to TypeSafe API with speculative heads.
+- Implement `field_text(context)` invoking the text LLM endpoint when operation is `TYPE_TEXT`.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `uv run pytest tests/test_cdp.py -v`
+Run: `cargo test --test test_model`
 Expected: PASS.
 
 - [ ] **Step 5: Commit changes**
 
 ```bash
-git add jev_obscura_browser/cdp.py tests/test_cdp.py
-git commit -m "feat: add native synchronous WebSocket CDP client for Obscura"
+git add src/types.rs src/questions.rs src/model.rs tests/test_model.rs
+git commit -m "feat: implement TypeSafe decision model and action space in Rust"
 ```
 
 ---
 
-### Task 3: Browser Engine Integration & Package Re-exports
+### Task 3: Asynchronous WebSocket CDP Client & Process Supervisor
 
 **Files:**
-- Modify: `jev_obscura_browser/browser.py`
-- Modify: `jev_obscura_browser/agent.py`
-- Modify: `jev_obscura_browser/demo.py`
-- Modify: `jev_obscura_browser/model.py`
-- Modify: `jev_obscura_browser/questions.py`
-- Modify: `tests/test_agent.py`
-- Modify: `examples/flights.py`
-- Modify: `examples/run.py`
+- Create: `src/cdp.rs`
+- Create: `tests/test_cdp.rs`
 
 **Interfaces:**
-- Consumes: `jev_obscura_browser.cdp.CDPClient`
-- Produces: Working `Browser` and `Agent` classes using Obscura CDP without `browser-harness`.
+- Consumes: `tokio-tungstenite`, `tokio::net::TcpStream`
+- Produces: `CdpClient` and `ensure_obscura(cdp_url)` in Rust.
 
-- [ ] **Step 1: Refactor `jev_obscura_browser/browser.py` to use `CDPClient`**
+- [ ] **Step 1: Write unit tests for CDP Client frame serialization & supervisor logic**
 
-Modify imports and replace `browser_harness` calls with the native `CDPClient`:
-```python
-"""Observed actions through Obscura Browser; one CDP session, no per-step subprocess."""
+Write `tests/test_cdp.rs`:
+```rust
+use jev_obscura_browser::cdp::{format_cdp_request, parse_cdp_response, CdpError};
+use serde_json::json;
 
-import hashlib
-import json
-import os
-import sys
-import time
-from pathlib import Path
+#[test]
+fn test_cdp_request_formatting() {
+    let req = format_cdp_request(42, "Target.createTarget", json!({"url": "about:blank"}), None);
+    assert_eq!(req["id"], 42);
+    assert_eq!(req["method"], "Target.createTarget");
+    assert_eq!(req["params"]["url"], "about:blank");
+    assert!(req.get("sessionId").is_none());
+}
 
-from jev_obscura_browser.cdp import CDPClient, DEFAULT_CDP_URL
+#[test]
+fn test_cdp_request_with_session() {
+    let req = format_cdp_request(43, "Runtime.evaluate", json!({"expression": "1+1"}), Some("sess-1"));
+    assert_eq!(req["sessionId"], "sess-1");
+}
 
-READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
-MARKER = f"(() => {{ const state={READ_STATE}; return state?.marker ?? null; }})()"
-
-class StalePage(ValueError):
-    """A decision no longer refers to the observed page."""
-
-# Module-level default client for mockability in tests
-_client = None
-
-def get_client(cdp_url=None):
-    global _client
-    if _client is None:
-        url = cdp_url or os.getenv("OBSCURA_CDP_URL", DEFAULT_CDP_URL)
-        _client = CDPClient(url)
-    return _client
-
-def cdp(method, session_id=None, **params):
-    return get_client().call(method, session_id=session_id, **params)
+#[test]
+fn test_cdp_error_parsing() {
+    let raw = json!({
+        "id": 44,
+        "error": {"code": -32000, "message": "Evaluation failed"}
+    });
+    let result = parse_cdp_response(raw);
+    assert!(matches!(result, Err(CdpError::ProtocolError(_))));
+}
 ```
 
-Ensure `Browser.__init__` and `browser_operation` use `cdp(...)` seamlessly.
+- [ ] **Step 2: Run test to verify failure**
 
-- [ ] **Step 2: Update all import statements in package and tests**
+Run: `cargo test --test test_cdp`
+Expected: FAIL.
 
-Change all occurrences of `jev_ultrafast` to `jev_obscura_browser`:
-- In `jev_obscura_browser/agent.py`: `from jev_obscura_browser import model` etc.
-- In `jev_obscura_browser/demo.py`: `from jev_obscura_browser.agent import Agent` etc.
-- In `examples/flights.py`: `from jev_obscura_browser import Agent`
-- In `examples/run.py`: `from jev_obscura_browser import Agent`
-- In `tests/test_agent.py`: `from jev_obscura_browser import agent as loop`, `from jev_obscura_browser.browser import StalePage...`
+- [ ] **Step 3: Implement `src/cdp.rs`**
 
-- [ ] **Step 3: Run existing unit test suite**
+- Implement `format_cdp_request` and `parse_cdp_response`.
+- Implement `CdpClient`: connects via `tokio_tungstenite::connect_async`, launches reader loop routing responses by integer ID to waiting oneshot channels.
+- Implement `call(&self, method, params, session_id) -> Result<Value, CdpError>`.
+- Implement `ensure_obscura(cdp_url)`: checks TCP connectivity; if offline, checks `OBSCURA_BIN` or `shutil`-equivalent PATH search for `obscura`, auto-spawns `obscura serve`, or returns helpful installation instructions.
 
-Run: `uv run pytest tests/test_agent.py -v`
-Expected: 14 passed.
+- [ ] **Step 4: Run tests to verify they pass**
 
-- [ ] **Step 4: Run ruff lint check**
-
-Run: `uv run ruff check .`
-Expected: All checks passed.
+Run: `cargo test --test test_cdp`
+Expected: PASS.
 
 - [ ] **Step 5: Commit changes**
 
 ```bash
-git add jev_obscura_browser/ examples/ tests/
-git commit -m "refactor: integrate Obscura CDP client into Browser and Agent"
+git add src/cdp.rs tests/test_cdp.rs
+git commit -m "feat: implement asynchronous WebSocket CDP client and supervisor in Rust"
 ```
 
 ---
 
-### Task 4: Legacy Evidence & Artifact Cleanup
+### Task 4: Browser Perception & DOM Interaction
 
 **Files:**
-- Delete: `docs/demo.mp4`
-- Delete: `docs/demo.gif`
-- Delete: `docs/inspector.png`
-- Delete: `docs/flights-result.png`
-- Delete: `docs/flights-measurement.json`
-- Delete: `docs/flights-prepared-measurement.json`
-- Delete: `docs/full-speed-measurement.json`
-- Delete: `docs/measurement.json`
-- Delete: `docs/performance.md`
-- Delete: `docs/performance-prepared.md`
-- Delete: `docs/launch-draft.md`
-- Delete: `scripts/record_flights.py`
-- Delete: `scripts/measure_flights.py`
-- Delete: `scripts/render_demo.py`
+- Create: `src/browser.rs`
+- Create: `src/agent.rs`
+- Create: `tests/test_browser.rs`
 
 **Interfaces:**
-- Consumes: Filesystem
-- Produces: Clean docs and scripts directories free of outdated browser-use evidence.
+- Consumes: `CdpClient`, `snapshot.js`
+- Produces: `Browser` and `Agent` runners in Rust.
 
-- [ ] **Step 1: Remove legacy media and measurement files**
+- [ ] **Step 1: Write integration tests for Browser state & StalePage handling**
+
+Write `tests/test_browser.rs`:
+```rust
+use jev_obscura_browser::types::PageState;
+use jev_obscura_browser::browser::fingerprint;
+use serde_json::json;
+
+#[test]
+fn test_fingerprint_deterministic() {
+    let page1 = PageState {
+        url: "https://example.com".into(),
+        title: "Example".into(),
+        text: "Content".into(),
+        scroll: json!({"y": 0}),
+        actions: vec![],
+        fingerprint: "".into(),
+        screenshot: None,
+    };
+    let fp1 = fingerprint(&page1);
+    let fp2 = fingerprint(&page1);
+    assert_eq!(fp1, fp2);
+    assert_eq!(fp1.len(), 64);
+}
+```
+
+- [ ] **Step 2: Run test to verify failure**
+
+Run: `cargo test --test test_browser`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement `src/browser.rs` and `src/agent.rs`**
+
+- Embed `snapshot.js` via `include_str!("snapshot.js")`.
+- Implement `Browser::new(url)` initializing CDP target, viewport metrics, and readyState polling.
+- Implement `Browser::observe(screenshot)` running atomic DOM evaluation and returning `PageState`.
+- Implement `Browser::act(action, page, text)` verifying target freshness and dispatching input events.
+- Implement `Agent::run(goal, max_steps)` running the decision loop `observe -> choose -> act`.
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `cargo test --test test_browser`
+Expected: PASS.
+
+- [ ] **Step 5: Commit changes**
+
+```bash
+git add src/browser.rs src/agent.rs tests/test_browser.rs
+git commit -m "feat: implement Browser DOM perception and Agent execution loop in Rust"
+```
+
+---
+
+### Task 5: Web Inspector Server & CLI
+
+**Files:**
+- Create: `src/demo.rs`
+- Create: `src/main.rs`
+- Modify: `src/lib.rs`
+- Modify: `static/index.html`
+
+**Interfaces:**
+- Consumes: `axum`, `tower-http`, `clap`
+- Produces: Working CLI executable `jev-obscura` and web inspector on `http://127.0.0.1:8766`.
+
+- [ ] **Step 1: Update `static/index.html`**
+
+Update UI branding:
+- Change title to `Jev Obscura Browser · Obscura × TypeSafe`.
+- Update brand text to `obscura <i>×</i> TypeSafe`.
+- Remove link to `demo.mp4`.
+- Update footer to `Obscura × TypeSafe · Experimental baseline`.
+
+- [ ] **Step 2: Implement `src/demo.rs` Axum server**
+
+- Serve static files from `./static` (or embedded in release build).
+- Implement REST endpoints:
+  - `GET /` -> `index.html`
+  - `POST /api/start` -> initializes Agent with given goal and URL.
+  - `POST /api/step` -> performs single step.
+  - `GET /api/state` -> returns current step, page state, and screenshot.
+
+- [ ] **Step 3: Implement CLI in `src/main.rs`**
+
+- Support subcommands and flags:
+  - `jev-obscura serve --port 8766`: runs interactive web inspector.
+  - `jev-obscura run --url <URL> --goal <GOAL>`: runs headless in terminal.
+  - `jev-obscura check`: health checks Obscura and TypeSafe API connectivity.
+
+- [ ] **Step 4: Verify web asset syntax and Rust compilation**
+
+Run: `node --check static/app.js`
+Expected: 0 syntax errors.
+Run: `cargo check --bin jev-obscura`
+Expected: 0 errors.
+
+- [ ] **Step 5: Commit changes**
+
+```bash
+git add src/demo.rs src/main.rs src/lib.rs static/index.html
+git commit -m "feat: implement Axum web inspector server and CLI in Rust"
+```
+
+---
+
+### Task 6: Documentation, Visual Identity & Legacy Artifact Purge
+
+**Files:**
+- Create: `docs/banner.svg`
+- Rewrite: `README.md`
+- Rewrite: `AGENTS.md`
+- Delete: `docs/demo.mp4`, `docs/demo.gif`, `docs/inspector.png`, `docs/flights-result.png`, `docs/flights-measurement.json`, `docs/flights-prepared-measurement.json`, `docs/full-speed-measurement.json`, `docs/measurement.json`, `docs/performance.md`, `docs/performance-prepared.md`, `docs/launch-draft.md`, `scripts/`
+
+**Interfaces:**
+- Consumes: Markdown, SVG
+- Produces: Clean docs and repository documentation reflecting the Rust implementation.
+
+- [ ] **Step 1: Create fresh SVG banner in `docs/banner.svg`**
+
+Create clean SVG dark-mode banner with "JEV OBSCURA BROWSER" and "Obscura × TypeSafe".
+
+- [ ] **Step 2: Delete legacy media, benchmark files, and old Python scripts**
 
 ```bash
 rm -f docs/demo.mp4 docs/demo.gif docs/inspector.png docs/flights-result.png
 rm -f docs/flights-measurement.json docs/flights-prepared-measurement.json docs/full-speed-measurement.json docs/measurement.json
 rm -f docs/performance.md docs/performance-prepared.md docs/launch-draft.md
-rm -f scripts/record_flights.py scripts/measure_flights.py scripts/render_demo.py
+rm -rf scripts/ examples/
 ```
 
-- [ ] **Step 2: Verify deletion**
+- [ ] **Step 3: Rewrite `README.md`**
 
-Run: `ls docs/ scripts/`
-Expected: Only `docs/banner.svg` (or new banner), `docs/design.md`, `docs/superpowers/`, and remaining scripts (`check_guards.py`, `render_fixture.py`, `smoke.py`) remain.
+Rewrite `README.md` with:
+- Banner: `<img src="docs/banner.svg" alt="Jev Obscura Browser · Obscura × TypeSafe" width="100%" />`
+- Title: `# Jev Obscura Browser ⚡ (Rust)`
+- Features: Built in Rust, powered by Obscura Browser (`https://obscura.sh/`) and TypeSafe Jev.
+- Installation: `cargo build --release`
+- Obscura setup: `obscura serve --port 9222` or `docker run -d -p 127.0.0.1:9222:9222 h4ckf0r0day/obscura`
+- Usage: `cargo run -- serve` or `cargo run -- run --url <URL> --goal <GOAL>`.
 
-- [ ] **Step 3: Commit deletion**
+- [ ] **Step 4: Update `AGENTS.md`**
 
-```bash
-git add -u
-git commit -m "chore: remove legacy browser-use evidence, measurements, and demo videos"
-```
-
----
-
-### Task 5: Documentation, Visual Identity & Web UI Rebranding
-
-**Files:**
-- Create: `docs/banner.svg`
-- Modify: `README.md`
-- Modify: `AGENTS.md`
-- Modify: `jev_obscura_browser/static/index.html`
-
-**Interfaces:**
-- Consumes: Obscura branding requirements
-- Produces: Fully rebranded project documentation and UI.
-
-- [ ] **Step 1: Create fresh SVG banner in `docs/banner.svg`**
-
-Write a dark-mode SVG banner featuring "JEV OBSCURA BROWSER" and "Obscura × TypeSafe" in `docs/banner.svg`.
-
-- [ ] **Step 2: Rewrite `README.md`**
-
-Write clean README:
-- Header: `<img src="docs/banner.svg" alt="Jev Obscura Browser · Obscura × TypeSafe" width="100%" />`
-- Title: `# Jev Obscura Browser ⚡`
-- Description: Fast browser agent powered by Obscura Browser (`https://obscura.sh/`) and TypeSafe Jev.
-- Obscura setup instructions:
-  - `obscura serve --port 9222` or `docker run -d -p 127.0.0.1:9222:9222 h4ckf0r0day/obscura`
-- Quickstart commands:
-  - `git clone https://github.com/PauloLuan/jev-obscura-browser.git`
-  - `uv sync`
-  - `cp .env.example .env`
-  - `uv run jev-obscura`
-- Library usage example with `jev_obscura_browser`.
-
-- [ ] **Step 3: Update `AGENTS.md`**
-
-Update rules and verification check paths:
+Update commands for Rust:
 ```markdown
-# Jev Obscura Browser
+# Jev Obscura Browser (Rust)
 
 Read README.md before editing. Keep the loop small: page -> indexed elements -> operation + target -> execution.
 
@@ -462,36 +446,23 @@ Read README.md before editing. Keep the loop small: page -> indexed elements -> 
 - Verify actual final outcomes independently. A DONE choice is not proof of success.
 - Do not commit or push unless the user requests it.
 
-Checks: uv run ruff check ., uv run pytest, node --check jev_obscura_browser/static/app.js, uv build.
+Checks: cargo clippy -- -D warnings, cargo test, node --check static/app.js, cargo build --release.
 ```
 
-- [ ] **Step 4: Update `jev_obscura_browser/static/index.html`**
-
-- Update title to: `<title>Jev Obscura Browser · Obscura × TypeSafe</title>`
-- Update brand logo to: `<a href="/" aria-label="Homepage" class="brand">obscura <i>×</i> TypeSafe</a>`
-- Update subtitle to remove dead `demo.mp4` link: `Jev picks the next action. A small language model handles the words.`
-- Update footer to: `Obscura × TypeSafe · Experimental baseline`
-
-- [ ] **Step 5: Run UI and lint verification**
-
-Run: `node --check jev_obscura_browser/static/app.js`
-Expected: 0 syntax errors.
-Run: `uv run ruff check .`
-Expected: 0 lint errors.
-
-- [ ] **Step 6: Commit changes**
+- [ ] **Step 5: Commit changes**
 
 ```bash
-git add docs/banner.svg README.md AGENTS.md jev_obscura_browser/static/index.html
-git commit -m "docs: update branding, documentation, and web UI for Obscura"
+git add docs/banner.svg README.md AGENTS.md
+git add -u
+git commit -m "docs: rebrand documentation and purge legacy evidence for Rust edition"
 ```
 
 ---
 
-### Task 6: Git Reinitialization & GitHub Remote Verification
+### Task 7: Git Reinitialization & GitHub Remote Verification
 
 **Files:**
-- Entire repository `.git/` history
+- Entire repository git history
 
 **Interfaces:**
 - Consumes: Cleaned workspace
@@ -509,10 +480,11 @@ git remote add origin https://github.com/PauloLuan/jev-obscura-browser.git
 
 Run:
 ```bash
-uv run ruff check .
-uv run pytest
-node --check jev_obscura_browser/static/app.js
-uv build
+cargo fmt --check
+cargo clippy -- -D warnings
+cargo test
+node --check static/app.js
+cargo build --release
 ```
 Expected: All checks PASS with exit code 0.
 
@@ -520,7 +492,7 @@ Expected: All checks PASS with exit code 0.
 
 ```bash
 git add .
-git commit -m "feat: initial commit for Jev Obscura Browser"
+git commit -m "feat: initial commit for Jev Obscura Browser (Rust Edition)"
 ```
 
 - [ ] **Step 4: Push to GitHub**
@@ -536,10 +508,9 @@ Expected: Successfully pushed to `https://github.com/PauloLuan/jev-obscura-brows
 jj git init
 jj status
 ```
-Expected: `Working copy (@) : ... (empty) (no description set)`
-Parent commit is the fresh initial commit on `main`.
+Expected: Clean working copy backed by fresh Git `main` commit.
 
 - [ ] **Step 6: Verify GitHub repository status**
 
 Run: `gh repo view PauloLuan/jev-obscura-browser`
-Expected: Clean repository status displaying the updated description and files.
+Expected: Repository active on GitHub with Rust language detection and clean README.
