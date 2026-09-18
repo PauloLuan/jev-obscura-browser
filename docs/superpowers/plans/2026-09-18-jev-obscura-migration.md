@@ -218,7 +218,7 @@ git commit -m "feat: implement TypeSafe decision model and action space in Rust"
 - Consumes: `tokio-tungstenite`, `tokio::net::TcpStream`
 - Produces: `CdpClient` and `ensure_obscura(cdp_url)` in Rust.
 
-- [ ] **Step 1: Write unit tests for CDP Client frame serialization & supervisor logic**
+- [x] **Step 1: Write unit tests for CDP Client frame serialization & supervisor logic**
 
 Write `tests/test_cdp.rs`:
 ```rust
@@ -251,24 +251,24 @@ fn test_cdp_error_parsing() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run: `cargo test --test test_cdp`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `src/cdp.rs`**
+- [x] **Step 3: Implement `src/cdp.rs`**
 
 - Implement `format_cdp_request` and `parse_cdp_response`.
 - Implement `CdpClient`: connects via `tokio_tungstenite::connect_async`, launches reader loop routing responses by integer ID to waiting oneshot channels.
 - Implement `call(&self, method, params, session_id) -> Result<Value, CdpError>`.
 - Implement `ensure_obscura(cdp_url)`: checks TCP connectivity; if offline, checks `OBSCURA_BIN` or `shutil`-equivalent PATH search for `obscura`, auto-spawns `obscura serve`, or returns helpful installation instructions.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test --test test_cdp`
 Expected: PASS.
 
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
 
 ```bash
 git add src/cdp.rs tests/test_cdp.rs
