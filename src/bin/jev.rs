@@ -1,3 +1,4 @@
-fn main() {
-    println!("jev-obscura-browser v{}", jev_obscura_browser::VERSION);
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    jev_obscura_browser::demo::run_cli().await
 }
