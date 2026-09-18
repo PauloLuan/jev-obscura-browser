@@ -405,11 +405,11 @@ git commit -m "feat: implement Axum web inspector server and CLI in Rust"
 - Consumes: Markdown, SVG
 - Produces: Clean docs and repository documentation reflecting the Rust implementation.
 
-- [ ] **Step 1: Create fresh SVG banner in `docs/banner.svg`**
+- [x] **Step 1: Create fresh SVG banner in `docs/banner.svg`**
 
 Create clean SVG dark-mode banner with "JEV OBSCURA BROWSER" and "Obscura × TypeSafe".
 
-- [ ] **Step 2: Delete legacy media, benchmark files, and old Python scripts**
+- [x] **Step 2: Delete legacy media, benchmark files, and old Python scripts**
 
 ```bash
 rm -f docs/demo.mp4 docs/demo.gif docs/inspector.png docs/flights-result.png
@@ -418,7 +418,7 @@ rm -f docs/performance.md docs/performance-prepared.md docs/launch-draft.md
 rm -rf scripts/ examples/
 ```
 
-- [ ] **Step 3: Rewrite `README.md`**
+- [x] **Step 3: Rewrite `README.md`**
 
 Rewrite `README.md` with:
 - Banner: `<img src="docs/banner.svg" alt="Jev Obscura Browser · Obscura × TypeSafe" width="100%" />`
@@ -428,7 +428,7 @@ Rewrite `README.md` with:
 - Obscura setup: `obscura serve --port 9222` or `docker run -d -p 127.0.0.1:9222:9222 h4ckf0r0day/obscura`
 - Usage: `cargo run -- serve` or `cargo run -- run --url <URL> --goal <GOAL>`.
 
-- [ ] **Step 4: Update `AGENTS.md`**
+- [x] **Step 4: Update `AGENTS.md`**
 
 Update commands for Rust:
 ```markdown
@@ -449,7 +449,7 @@ Read README.md before editing. Keep the loop small: page -> indexed elements -> 
 Checks: cargo clippy -- -D warnings, cargo test, node --check static/app.js, cargo build --release.
 ```
 
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
 
 ```bash
 git add docs/banner.svg README.md AGENTS.md
