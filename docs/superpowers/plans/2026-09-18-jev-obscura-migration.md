@@ -288,7 +288,7 @@ git commit -m "feat: implement asynchronous WebSocket CDP client and supervisor 
 - Consumes: `CdpClient`, `snapshot.js`
 - Produces: `Browser` and `Agent` runners in Rust.
 
-- [ ] **Step 1: Write integration tests for Browser state & StalePage handling**
+- [x] **Step 1: Write integration tests for Browser state & StalePage handling**
 
 Write `tests/test_browser.rs`:
 ```rust
@@ -314,12 +314,12 @@ fn test_fingerprint_deterministic() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run: `cargo test --test test_browser`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `src/browser.rs` and `src/agent.rs`**
+- [x] **Step 3: Implement `src/browser.rs` and `src/agent.rs`**
 
 - Embed `snapshot.js` via `include_str!("snapshot.js")`.
 - Implement `Browser::new(url)` initializing CDP target, viewport metrics, and readyState polling.
@@ -327,12 +327,12 @@ Expected: FAIL.
 - Implement `Browser::act(action, page, text)` verifying target freshness and dispatching input events.
 - Implement `Agent::run(goal, max_steps)` running the decision loop `observe -> choose -> act`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test --test test_browser`
 Expected: PASS.
 
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
 
 ```bash
 git add src/browser.rs src/agent.rs tests/test_browser.rs
